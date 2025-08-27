@@ -1,10 +1,11 @@
-pub mod palette;
+pub mod palettes;
 
 use std::env;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView, ImageError, ImageReader, Rgb};
+use image::{DynamicImage, GenericImageView, ImageError, ImageReader, Pixel, Rgb};
+use palette::{FromColor, Oklab, Srgb};
 
-use crate::palette::{get_palette, Palette};
+use crate::palettes::{get_palette, Palette};
 
 /// Pixelate an image by resizing it to a smaller size
 fn pixelate(image: DynamicImage, pixel_size: u32) -> Result<DynamicImage, ImageError> {
@@ -16,20 +17,35 @@ fn pixelate(image: DynamicImage, pixel_size: u32) -> Result<DynamicImage, ImageE
     return Ok(image);
 }
 
-/// Euclidean distance between two colors
-fn euclidean_distance(a: Rgb<u8>, b: Rgb<u8>) -> u32 {
-    a.0.iter()
-        .zip(b.0.iter())
-        .map(|(x, y)| (*x as i32 - *y as i32).pow(2) as u32)
-        .sum()
+/// Convert an RGB color to the Oklab color space
+fn rgb_to_oklab(color: Rgb<u8>) -> Oklab<f32> {
+    let channels = color.channels();
+    let color = Srgb::new(channels[0] as f32 / 255.0, channels[1] as f32 / 255.0, channels[2] as f32 / 255.0);
+    Oklab::from_color(color.into_linear())
 }
+
+/// Calculate the Euclidean distance between two colors in the Oklab color space
+fn oklab_distance(a: Oklab<f32>, b: Oklab<f32>) -> f32 {
+    let dl = a.l - b.l;
+    let da = a.a - b.a;
+    let db = a.b - b.b;
+    dl*dl + da*da + db*db
+}
+
+/// Euclidean distance between two colors
+// fn euclidean_distance(a: Rgb<u8>, b: Rgb<u8>) -> u32 {
+//     a.0.iter()
+//         .zip(b.0.iter())
+//         .map(|(x, y)| (*x as i32 - *y as i32).pow(2) as u32)
+//         .sum()
+// }
 
 /// Find the closest color in a palette to a given color
 fn closest_color(color: Rgb<u8>, palette: &Palette) -> Rgb<u8> {
     let mut closest: Rgb<u8> = *palette.get_color(0).unwrap();
-    let mut min_distance = u32::MAX;
+    let mut min_distance = f32::MAX;
     for palette_color in palette.colors.iter() {
-        let distance = euclidean_distance(color, *palette_color);
+        let distance = oklab_distance(rgb_to_oklab(color), rgb_to_oklab(*palette_color));
         if distance < min_distance {
             min_distance = distance;
             closest = palette_color.clone();
